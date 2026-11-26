@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>News Scanner — macro · sector · ticker</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='25' font-size='26'>◈</text></svg>" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◈</span>
+      <div class="brand-text">
+        <h1>NEWS SCANNER</h1>
+        <p>macro · 11 sectors · tickers · peers</p>
+      </div>
+    </div>
+
+    <div class="tape-wrap"><div id="tape" class="tape"><span class="tape-empty">add tickers to see live quotes</span></div></div>
+
+    <div class="topbar-right">
+      <div class="status" id="status">
+        <span class="dot" id="status-dot"></span>
+        <div class="status-text">
+          <span id="status-main">idle</span>
+          <small id="status-sub">—</small>
+        </div>
+      </div>
+      <button class="btn primary" id="btn-scan" title="Run a scan now (S)">
+        <span class="scan-ico">⟳</span> Scan now
+      </button>
+      <label class="switch" title="Server-side auto refresh">
+        <input type="checkbox" id="auto-refresh" checked />
+        <span class="slider"></span>
+        <span class="switch-label">Auto</span>
+      </label>
+      <select id="interval-select" title="Auto refresh interval">
+        <option value="60">1m</option>
+        <option value="120">2m</option>
+        <option value="180" selected>3m</option>
+        <option value="300">5m</option>
+        <option value="600">10m</option>
+      </select>
+      <button class="btn ghost icon" id="btn-settings" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <div class="progress" id="progress" hidden>
+    <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+    <span class="progress-label" id="progress-label">starting…</span>
+  </div>
+
+  <main class="layout">
+    <!-- ------------------------------------------------------ left rail -->
+    <aside class="rail">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Positions</h2>
+          <span class="count" id="pos-count">0</span>
+        </div>
+        <div class="ticker-list" id="positions-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Watchlist</h2>
+          <button class="link-btn" id="btn-manage" title="Edit watchlist and positions in bulk">manage</button>
+          <span class="count" id="watch-count">0</span>
+        </div>
+        <div class="ticker-list" id="watch-list"></div>
+        <form class="add-row" id="add-form" autocomplete="off">
+          <input id="add-input" placeholder="Add ticker or company…" aria-label="Add ticker" />
+          <select id="add-kind" aria-label="Add to">
+            <option value="watch">watch</option>
+            <option value="position">position</option>
+          </select>
+          <select id="add-side" aria-label="Side" title="Long or short — sets the context for the technical read">
+            <option value="">—</option>
+            <option value="long">L</option>
+            <option value="short">S</option>
+          </select>
+          <button class="btn" type="submit" title="Add">+</button>
+        </form>
+        <div class="suggest" id="suggest" hidden></div>
+        <div class="presets" id="presets"></div>
+      </section>
+
+      <section class="panel sources-panel">
+        <div class="panel-head">
+          <h2>Sources</h2>
+          <button class="link-btn" id="btn-health">health</button>
+        </div>
+        <div class="source-strip" id="source-strip"></div>
+      </section>
+    </aside>
+
+    <!-- ----------------------------------------------------------- feed -->
+    <section class="feed-col">
+      <div class="view-bar">
+        <div class="segmented view-tabs" id="view-tabs">
+          <button data-view="news" class="active">News feed</button>
+          <button data-view="tech">Technicals</button>
+        </div>
+        <span class="muted small" id="view-hint">news scan · macro, sectors, tickers, peers</span>
+      </div>
+
+      <div id="news-view">
+      <div class="brief panel" id="brief-panel" hidden>
+        <div class="panel-head">
+          <h2><span class="spark">✦</span> Desk note</h2>
+          <span class="muted small" id="brief-time"></span>
+          <button class="link-btn" id="brief-history" title="Previous desk notes, newest first">history<span class="bh-badge" id="brief-count" hidden></span></button>
+          <button class="link-btn" id="brief-refresh" title="Regenerate now (uses the deep model)">regenerate</button>
+          <button class="link-btn" id="brief-hide">hide</button>
+        </div>
+        <div class="brief-body" id="brief-body"></div>
+      </div>
+
+      <div class="macro panel" id="macro-panel" hidden>
+        <div class="panel-head">
+          <h2><span class="spark">⌁</span> Macro tape</h2>
+          <span class="muted small" id="macro-asof"></span>
+          <button class="link-btn" id="macro-refresh" title="Refetch yields, credit, commodities and the calendar">
+            refresh
+          </button>
+        </div>
+        <div class="macro-body" id="macro-body"></div>
+      </div>
+
+      <div class="sector-grid" id="sector-grid"></div>
+      <div class="topic-row" id="topic-row"></div>
+
+      <div class="filters">
+        <div class="segmented" id="scope-tabs">
+          <button data-scope="all" class="active">All</button>
+          <button data-scope="macro">Macro</button>
+          <button data-scope="sector">Sectors</button>
+          <button data-scope="ticker">Tickers</button>
+          <button data-scope="peer">Peers</button>
+        </div>
+        <input id="search" class="search" placeholder="Search headlines…  ( / )" />
+        <select id="sort" title="Sort the feed">
+          <option value="smart">Smart · relevance + fresh</option>
+          <option value="published">Published · newest</option>
+          <option value="published_asc">Published · oldest</option>
+          <option value="added">Recently pulled</option>
+          <option value="relevance">Relevance</option>
+        </select>
+        <label class="range-wrap" title="Minimum relevance">
+          <span class="muted small">rel ≥</span>
+          <input type="range" id="min-rel" min="0" max="80" step="5" value="0" />
+          <span class="range-val" id="min-rel-val">0</span>
+        </label>
+        <select id="hours" title="How far back to look">
+          <option value="24">Last 24h</option>
+          <option value="48" selected>Last 48h</option>
+          <option value="168">Last 7d</option>
+          <option value="720">Last 30d</option>
+        </select>
+        <label class="check" title="Hide broad market noise">
+          <input type="checkbox" id="hide-market" /> <span class="muted small">hide noise</span>
+        </label>
+      </div>
+
+      <div class="feed-meta">
+        <span id="feed-count">—</span>
+        <span class="sep">·</span>
+        <span id="feed-updated">—</span>
+        <span class="grow"></span>
+        <span class="live"><span class="dot"></span><span id="live-label">live</span></span>
+      </div>
+
+      <div class="feed" id="feed">
+        <div class="empty" id="empty-state">
+          <h3>No news yet</h3>
+          <p>Add tickers to your watchlist or positions, then hit <b>Scan now</b>.</p>
+          <p class="muted">The scanner pulls Google News (macro, 11 GICS sectors, tickers, peer groups),
+             Nasdaq, SEC EDGAR, Fed, WSJ, FT, MarketWatch, Investing.com, Yahoo, PR Newswire,
+             company IR feeds — then Ollama scores each headline for your book.</p>
+        </div>
+      </div>
+      </div><!-- /news-view -->
+
+      <!-- ---------------------------------------------------- technicals -->
+      <section class="tech-view" id="tech-view" hidden>
+        <div class="tech-head panel">
+          <div class="tech-head-top">
+            <div class="tech-head-title">
+              <h2>Technical read · whole book</h2>
+              <div class="tech-summary" id="tech-summary">No technical snapshots yet — run a scan.</div>
+            </div>
+            <div class="tech-head-actions">
+              <span class="muted small" id="tech-at"></span>
+              <button class="btn" id="tech-rescan" title="Fetch fresh daily bars and recompute">
+                <span class="scan-ico">⟳</span> Rescan
+              </button>
+            </div>
+          </div>
+          <div class="tech-filters">
+            <div class="segmented" id="tech-side-tabs">
+              <button data-side="all" class="active">All</button>
+              <button data-side="long">Longs</button>
+              <button data-side="short">Shorts</button>
+              <button data-side="none">No side</button>
+            </div>
+            <label class="check" title="Names whose technicals oppose their tagged side">
+              <input type="checkbox" id="tech-conflicts" />
+              <span class="muted small">conflicts only</span>
+            </label>
+            <span class="grow"></span>
+            <select id="tech-sort" title="Order the technical cards">
+              <option value="book">Book order</option>
+              <option value="score">Strongest first</option>
+              <option value="weakest">Weakest first</option>
+              <option value="alignment">Alignment</option>
+              <option value="ticker">Ticker A→Z</option>
+            </select>
+            <input id="tech-search" class="search" placeholder="Filter ticker, setup, level…" />
+          </div>
+          <div class="tech-align" id="tech-align"></div>
+          <div class="tech-breadth" id="tech-breadth"></div>
+        </div>
+        <div class="tech-grid" id="tech-grid"></div>
+        <div class="tech-empty" id="tech-empty" hidden>
+          <h3>No technical data yet</h3>
+          <p class="muted">The technical scanner reads a year of daily bars for every position
+            and watchlist name. It runs with each news scan; you can also run it on its own.</p>
+          <button class="btn primary" id="tech-empty-scan">Run technical scan</button>
+        </div>
+      </section>
+    </section>
+  </main>
+</div>
+
+<!-- ------------------------------------------------------- ticker drawer -->
+<dialog id="ticker-modal" class="modal drawer">
+  <div class="modal-head">
+    <div>
+      <h2 id="tm-ticker">—</h2>
+      <p class="muted small" id="tm-name"></p>
+    </div>
+    <div class="modal-head-right">
+      <span id="tm-quote" class="quote-big"></span>
+      <button class="btn ghost icon" data-close>✕</button>
+    </div>
+  </div>
+  <div class="modal-body">
+    <div class="kv-grid" id="tm-kv"></div>
+    <div class="peers-block">
+      <h3>Same-industry peers <span class="muted small">(their news is pulled too)</span></h3>
+      <div class="peer-chips" id="tm-peers"></div>
+    </div>
+    <div class="tech-block">
+      <h3>Technical picture <span class="muted small">· price action, side-aware</span></h3>
+      <div id="tm-tech"></div>
+    </div>
+    <div class="kv-grid" id="tm-edit"></div>
+    <div class="actions-row">
+      <button class="btn" id="tm-ir">Find IR RSS feed</button>
+      <button class="btn ghost" id="tm-refresh">Re-map industry</button>
+      <button class="btn danger ghost" id="tm-remove">Remove</button>
+    </div>
+    <h3 class="section-title">Ticker news</h3>
+    <div class="mini-feed" id="tm-news"></div>
+  </div>
+</dialog>
+
+<!-- ------------------------------------------------------------ manage -->
+<dialog id="manage-modal" class="modal">
+  <div class="modal-head">
+    <h2>Manage list</h2>
+    <button class="btn ghost icon" data-close>✕</button>
+  </div>
+  <div class="modal-body">
+    <p class="muted small">
+      One ticker per line. Move names between the boxes (or just edit the text) and save —
+      removals, additions and position/watchlist changes are applied in one go.
+      Add <code>L</code> or <code>S</code> after a ticker to tag it long or short
+      (e.g. <code>NVDA L</code>, <code>TSLA S</code>) — the technical read is contextualised
+      against that side.
+    </p>
+    <div class="manage-cols">
+      <div class="manage-col">
+        <h3 class="section-title">Positions <span class="muted small" id="mg-pos-count">0</span></h3>
+        <textarea id="mg-positions" rows="12" spellcheck="false"></textarea>
+      </div>
+      <div class="manage-col">
+        <h3 class="section-title">Watchlist <span class="muted small" id="mg-watch-count">0</span></h3>
+        <textarea id="mg-watch" rows="12" spellcheck="false"></textarea>
+      </div>
+    </div>
+    <div class="actions-row">
+      <button class="btn primary" id="mg-save">Save changes</button>
+      <button class="btn ghost" id="mg-reset">Reset</button>
+      <span class="muted small" id="mg-diff"></span>
+    </div>
+  </div>
+</dialog>
+
+<!-- ---------------------------------------------------------- settings -->
+<dialog id="settings-modal" class="modal">
+  <div class="modal-head">
+    <h2>Settings</h2>
+    <button class="btn ghost icon" data-close>✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="settings-grid" id="settings-grid"></div>
+    <div class="actions-row">
+      <button class="btn primary" id="settings-save">Save</button>
+      <button class="btn ghost" id="settings-test-llm">Test Ollama</button>
+      <button class="btn ghost" id="settings-rebuild">Rebuild GICS index</button>
+    </div>
+    <div class="llm-result small" id="llm-result"></div>
+    <h3 class="section-title">Ollama usage</h3>
+    <div class="llm-usage small" id="llm-usage"></div>
+    <h3 class="section-title">Source health</h3>
+    <div class="health-table" id="health-table"></div>
+  </div>
+</dialog>
+
+<!-- ------------------------------------------------- desk note history -->
+<dialog id="brief-modal" class="modal">
+  <div class="modal-head">
+    <div>
+      <h2>Desk note history</h2>
+      <p class="muted small" id="bh-count">—</p>
+    </div>
+    <button class="btn ghost icon" data-close>✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="brief-history" id="brief-history-list"></div>
+  </div>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
